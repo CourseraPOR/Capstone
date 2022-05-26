@@ -1,0 +1,527 @@
+---
+title: 'Data Science Capstone: N-gram modelling'
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(quanteda)
+require(quanteda.textstats)
+require(cld2)
+require(dictionaRy)
+require(qdapDictionaries)
+require(kgrams)
+require(stringr)
+require(ggplot2)
+require(scales)
+require(formattable)
+require(dplyr)
+require(gridExtra)
+require(cowplot)
+require(tidytext)
+require(caret)
+        
+
+## clean up
+rm(list=ls())
+```
+
+### **Week 2: Modelling**  
+
+* The basic goal of this task is to build an n-gram model, which will allow you to **predict a word given the previous one, two, or maybe three words**. Now, this will be based on combinations of words that you observe in your data set.  
+  
+* **ASSUMPTIONS**  
+  * we only need to predict a single word, i.e. the word with highest probability  
+  * we do not need to indicate the probability for that word  
+  
+
+* sometimes people will want to type combinations of words that you've never seen before, even in your massive data set. And so you're going to have to figure out a way to handle these cases when they come up.  
+
+* We will base our approach on that described here: https://web.stanford.edu/~jurafsky/slp3/3.pdf (same content here: https://www.youtube.com/watch?v=w4utWoJfxGE)
+
+```{r download datasets}
+## specify URL
+downloadURL <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+## specify filename
+destFilename <- "Coursera-SwiftKey.zip"
+
+## if not downloaded already, do so
+if(file.exists(destFilename) == FALSE) {
+  download.file(url=downloadURL,destfile = destFilename)
+}
+
+## if not unzipped already, do so
+if(file.exists("final") == FALSE) {
+  unzip(zipfile = destFilename)
+}
+
+## specify path to English dataset
+englishPath <- "final/en_US/"
+```
+
+  
+```{r read entire datasets into memory, warning=FALSE}
+# ##once methods have been developed, we will use the entire datasets (or samples of... )
+blogs <- readLines(paste0(englishPath, "en_US.blogs.txt"), encoding = "UTF-8")
+twitter <- readLines(paste0(englishPath, "en_US.twitter.txt"), encoding = "UTF-8")
+news <- readLines(paste0(englishPath, "en_US.news.txt"), encoding = "UTF-8")
+```
+
+```{r use tidytext}
+# combined_df <- tibble(txt=c(twitter, news, blogs))
+# 
+# ## split into sentences
+# combined_df <-  combined_df %>%
+#   unnest_tokens(output = sentence, input = txt, token = "sentences")
+# 
+# ## split into tetragrams
+# combined_df <-  combined_df %>%
+#   unnest_tokens(output = tetragram, input = sentence, token = "ngrams", n = 4)
+# 
+# ## count frequency
+# tic("count")
+# combined_df <-  combined_df  %>%
+#   count(tetragram, sort = TRUE) 
+# toc()
+
+
+```
+
+
+```{r combine datasets}
+combined <- c(twitter, blogs, news)
+rm(twitter, blogs, news)
+gc()
+```
+
+```{r define ranges of elements}
+## we will read data as 10 chunks, count ngrams in each and then combine the counts
+## we need to define which elements go into chunk 1, 2, 3 etc
+# define indices at 10 equal intervals along combined array
+indices <- c(1, 1:10 * round(length(combined)/9, digits = 0), length(combined))
+indices
+
+
+
+```
+
+```{r split data into ten}
+combined_1 <- combined[indices[1]:indices[2]]
+
+```
+
+
+
+```{r get counts of ngrams}
+
+tic("generate ngrams")
+ngrams_1 <- combined_1 %>%
+  corpus() %>%
+  tokens(remove_punct = TRUE,remove_symbols = TRUE,remove_numbers = TRUE) %>%
+  tokens_tolower(keep_acronyms = FALSE) %>%
+  tokens_ngrams(n = 2:4) %>%                ## split into ngrams
+  dfm() %>%                               ## create document feature matrix
+  textstat_frequency() %>%                ## get counts of each bigram
+  as.data.frame() %>%
+  mutate(feature = gsub(pattern = "_", replacement = " ", x=feature)) %>%
+  mutate(preceding = sub(pattern = " ([^ ]*)$", replacement = "", x=feature)) %>%
+  mutate(following = gsub(pattern = ".* ", replacement = "", x=feature)) %>%
+  mutate(count = frequency) %>%
+  dplyr::select(preceding, following, count)  ## drop unnecessary columns
+toc()  
+
+  
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r partition into training and test sets}
+
+
+## split into 70% that will stay in training, 30% will go into validation
+# inTrain <- createDataPartition(y=combined, p=0.70, list = FALSE) 
+# 
+# ## create the validation set
+# validation <- training[-inTrain,]		##create a validation set
+# ## check dimensions
+# dim(validation)
+# 
+# ## now subset the training set
+# training <- training[inTrain,]		      ##subset the training set
+# ## check dimensions
+# dim(training)
+
+
+
+
+```
+
+
+
+
+
+
+
+```{r create corpus}
+combined_corpus <- corpus(x=combined)
+# rm(combined)
+# gc()
+# 
+# ## change unit of corpus to sentences 
+# combined_corpus <- corpus_reshape(x=combined_corpus, to="sentences")
+
+
+
+```
+
+
+```{r split into tokens}
+combined_tokens <- tokens(combined_corpus, remove_punct = TRUE,remove_symbols = TRUE,remove_numbers = TRUE)
+
+rm(combined_corpus)
+gc()
+```
+
+
+```{r convert tokens to lower case}
+
+combined_tokens <- tokens_tolower(x=combined_tokens, keep_acronyms = FALSE)
+
+```
+
+
+
+
+```{r tidytext}
+# unnest_tokens(tbl = tibble(txt="the quick brown fox jumped over the lazy dog"), output = ngram, input = txt, token = "ngrams", n = 2:4)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+`r knitr::knit_exit()`
+
+  
+```{r read first x lines of each, warning=FALSE}
+## specify how many lines to read
+numberLines <- 30000
+
+
+## we will develop methodology based on first few lines of each file
+# blogs <- readLines(paste0(englishPath, "en_US.blogs.txt"), n = numberLines, encoding = "UTF-8")
+# news <- readLines(paste0(englishPath, "en_US.news.txt"), n = numberLines, encoding = "UTF-8")
+# twitter <- readLines(paste0(englishPath, "en_US.twitter.txt"), n = numberLines, encoding = "UTF-8")
+
+```
+
+```{r define function to sample data}
+## we will read in a random sample of 10% of lines from each file
+set.seed(12345)
+
+sampleFunction <- function(pathToFile, proportion) {
+  totalLines <- length(readLines(pathToFile, encoding = "UTF-8"))
+  sampleSize <- round(totalLines * proportion)
+  sampled <- sample(x=readLines(pathToFile, encoding = "UTF-8"), size=sampleSize)
+  return(sampled)
+}
+
+```
+
+```{r read a proportion of each dataset}
+proportion <- 0.4
+
+
+blogs <- sampleFunction(pathToFile = paste0(englishPath, "en_US.blogs.txt"), proportion = proportion)
+twitter <- sampleFunction(pathToFile = paste0(englishPath, "en_US.twitter.txt"), proportion = proportion)
+news <- sampleFunction(pathToFile = paste0(englishPath, "en_US.news.txt"), proportion = proportion)
+
+
+```
+
+
+
+
+
+```{r remove stopwords}
+## NOT USED, AS WE WANT TO PREDICT NEXT WORD IF SOMEONE ENTERS A STOPWORD
+# combined_tokens <- tokens_select(combined_tokens, pattern = stopwords("en"), selection = "remove")
+
+
+```
+
+
+```{r get unigram counts}
+## for two purposes... 
+## in backoff model, if no matching n-grams, estimate probability of unigrams
+## in n-gram models for normalisation 
+
+# ## first we need to create a document-feature matrix
+# combined_dfm <- dfm(combined_tokens)
+# ## now get counts of each word
+# combined_unigram_counts <- textstat_frequency(combined_dfm)
+# ## just get columns of interest
+# combined_unigram_counts <- dplyr::select(as.data.frame(combined_unigram_counts), feature, frequency)
+
+```
+
+
+
+```{r add tags at start, end of sentences}
+## add #s to denote start, #e to denote end
+# combined_corpus <- paste("#s", combined_corpus, "#e")
+
+```
+
+```{r calculate unigram probabilities}
+
+combined_unigram_counts <- combined_corpus %>%
+  tokens( remove_punct = TRUE,remove_symbols = TRUE,remove_numbers = TRUE, remove_separators = TRUE) %>%
+  tokens_tolower(keep_acronyms = FALSE) %>%   ## convert all to lowercase
+  dfm() %>%                               ## create document feature matrix
+  textstat_frequency() %>%                ## get counts of each unigram
+  as.data.frame() %>%
+  dplyr::select(feature, frequency)  ## drop unnecessary columns
+
+
+## store most common word
+most_common_word <- combined_unigram_counts$feature[combined_unigram_counts$frequency == max(combined_unigram_counts$frequency)][1]
+```
+
+
+
+```{r calculate bigram probabilities}
+## we need to add tags to denote start and end of sentences
+## add #s to denote start, #e to denote end
+
+combined_bigram_counts <- paste("#s", combined_corpus, "#e") %>%
+  tokens( remove_punct = TRUE,remove_symbols = TRUE,remove_numbers = TRUE, remove_separators = TRUE) %>%
+  tokens_tolower(keep_acronyms = FALSE) %>%   ## convert all to lowercase
+  tokens_ngrams(n = 2) %>%                ## split into bigrams
+  dfm() %>%                               ## create document feature matrix
+  textstat_frequency() %>%                ## get counts of each bigram
+  as.data.frame() %>%
+  tidyr::separate( col = "feature", into = c("preceding", "following"), sep = "_") %>%    ## split into preceding and following words
+  mutate(bigram=paste(preceding, following, sep=" ")) %>% ## add a column that will hold the full bigram
+  dplyr::select(bigram, preceding, following, "bigram_count"= "frequency")  ## drop unnecessary columns
+  
+
+## we want to the bigram probabilities after normalization (dividing each count by the appropriate unigram for the preceding word, taken from the combined_unigram_counts table
+# first, merge with unigram counts
+combined_bigram_counts <- merge(x=combined_unigram_counts, by.x = "feature", all.x = TRUE, y=combined_bigram_counts, by.y = "preceding", all.y = TRUE)
+# calculate probabilities
+combined_bigram_counts$bigram_prob <- combined_bigram_counts$bigram_count / combined_bigram_counts$frequency
+
+## drop any rows where prob is NA
+combined_bigram_counts <- dplyr::filter(combined_bigram_counts, !is.na(bigram_prob))
+
+## for each preceding word(s), just keep the row with the most likely following word
+combined_bigram_counts <- combined_bigram_counts %>%
+  group_by(feature) %>%
+  arrange(desc(bigram_prob)) %>%
+  slice(1) %>%
+  as.data.frame()
+
+
+## we can now estimate the accuracy - i.e. the average proportion of those preceding words that end in that following word
+mean_bigram_accuracy <- mean(combined_bigram_counts$bigram_prob)
+```
+
+
+```{r calculate trigram probabilities, warning=FALSE}
+
+combined_trigram_counts <- paste("#s", combined_corpus, "#e") %>%
+    tokens( remove_punct = TRUE,remove_symbols = TRUE,remove_numbers = TRUE, remove_separators = TRUE) %>%
+    tokens_tolower(keep_acronyms = FALSE) %>%   ## convert all to lowercase
+    tokens_ngrams(n = 3) %>%                ## split into bigrams
+    dfm() %>%                               ## create document feature matrix
+    textstat_frequency() %>%                ## get counts of each bigram
+    as.data.frame() %>%
+    tidyr::separate( col = "feature", into = c("preceding1", "preceding2", "following"), sep = "_") %>%    ## split into preceding and following words
+    mutate(preceding = paste(preceding1, preceding2, sep = " "), .keep = "unused") %>%
+    mutate(trigram=paste(preceding, following, sep=" ")) %>% ## add a column that will hold the full trigram
+    dplyr::select(trigram, preceding, following, "trigram_count"= "frequency")       
+
+
+
+## we want the trigram probabilities after normalization (dividing each count by the appropriate bigram for the preceding 2 words, taken from the combined_bigram_counts table
+# first, merge with bigram counts
+combined_trigram_counts <- merge(x=dplyr::select(combined_bigram_counts, bigram, bigram_count), by.x = "bigram", all.x = TRUE, y=combined_trigram_counts, by.y = "preceding", all.y = TRUE)
+# calculate probabilities
+combined_trigram_counts$trigram_prob <- combined_trigram_counts$trigram_count / combined_trigram_counts$bigram_count
+
+## drop any rows where prob is NA
+combined_trigram_counts <- dplyr::filter(combined_trigram_counts, !is.na(trigram_prob))
+
+
+## for each preceding word(s), just keep the row with the most likely following word
+combined_trigram_counts <- combined_trigram_counts %>%
+  group_by(bigram) %>%
+  arrange(desc(trigram_prob)) %>%
+  slice(1) %>%
+  as.data.frame()
+
+mean_trigram_accuracy <- mean(combined_trigram_counts$trigram_prob)
+
+```
+
+
+
+```{r calculate tetragram probabilities, warning=FALSE}
+
+combined_tetragram_counts <- paste("#s", combined_corpus, "#e") %>%
+    tokens( remove_punct = TRUE,remove_symbols = TRUE,remove_numbers = TRUE, remove_separators = TRUE) %>%
+    tokens_tolower(keep_acronyms = FALSE) %>%   ## convert all to lowercase
+    tokens_ngrams(n = 4) %>%                ## split into tetragrams
+    dfm() %>%                               ## create document feature matrix
+    textstat_frequency() %>%                ## get counts of each tetragram
+    as.data.frame() %>%
+    tidyr::separate( col = "feature", into = c("preceding1", "preceding2","preceding3", "following"), sep = "_") %>%    ## split into preceding and following words
+    mutate(preceding = paste(preceding1, preceding2, preceding3, sep = " "), .keep = "unused") %>%
+    mutate(tetragram=paste(preceding, following, sep=" ")) %>% ## add a column that will hold the full tetragram
+    dplyr::select(tetragram,preceding, following, "tetragram_count"= "frequency")       
+
+
+
+## we want the tetragram probabilities after normalization (dividing each count by the appropriate trigram for the preceding 3 words, taken from the combined_trigram_counts table
+# first, merge with trigram counts
+combined_tetragram_counts <- merge(x=dplyr::select(combined_trigram_counts, trigram, trigram_count), by.x = "trigram", all.x = TRUE, y=combined_tetragram_counts, by.y = "preceding", all.y = TRUE)
+# calculate probabilities
+combined_tetragram_counts$tetragram_prob <- combined_tetragram_counts$tetragram_count / combined_tetragram_counts$trigram_count
+
+## drop any rows where prob is NA
+combined_tetragram_counts <- dplyr::filter(combined_tetragram_counts, !is.na(tetragram_prob))
+
+## for each preceding word(s), just keep the row with the most likely following word
+combined_tetragram_counts <- combined_tetragram_counts %>%
+  group_by(trigram) %>%
+  arrange(desc(tetragram_prob)) %>%
+  slice(1) %>%
+  as.data.frame()
+
+
+mean_tetragram_accuracy <- mean(combined_tetragram_counts$tetragram_prob)
+```
+
+
+
+
+```{r save to files}
+# # Save an object to a file
+# saveRDS(object, file = "my_data.rds")
+# # Restore the object
+# readRDS(file = "my_data.rds")
+
+
+
+```
+
+
+
+
+```{r write a function that returns following word}
+
+
+predictWord <- function(preceding) {
+  ## convert to lowercase
+  preceding <- tolower(preceding)
+  ## squish any extra whitespace
+  preceding <- str_squish(preceding)
+  
+  
+  
+  
+  ## check to see if preceding is present in higher order ngrams
+  ## check tetragrams... 
+  ## extract last 3 words
+  preceding <- paste(tail(unlist(strsplit(preceding, split = " ")), 3), collapse = " ")
+  if(preceding %in% combined_tetragram_counts$trigram) {
+    prediction <- combined_tetragram_counts$following[combined_tetragram_counts$trigram == preceding]
+    # table <- dplyr::filter(combined_tetragram_counts, trigram == preceding)
+    # prediction <- table$following[table$tetragram_prob == max(table$tetragram_prob)]
+    ## if more than one word predicted, choose first one at random
+    prediction <- prediction[1]
+    return(prediction)
+  }
+  ## check trigrams... 
+  ## extract last 2 words
+  preceding <- paste(tail(unlist(strsplit(preceding, split = " ")), 2), collapse = " ")
+  if(preceding %in% combined_trigram_counts$bigram) {
+    prediction <- combined_trigram_counts$following[combined_trigram_counts$bigram == preceding]
+
+    
+    # table <- dplyr::filter(combined_trigram_counts, bigram == preceding)
+    # prediction <- table$following[table$trigram_prob == max(table$trigram_prob)]
+    ## if more than one word predicted, choose first one at random
+    prediction <- prediction[1]
+    return(prediction)
+  }
+  ## check bigrams
+  ## extract last 2 words
+  preceding <- paste(tail(unlist(strsplit(preceding, split = " ")), 1), collapse = " ")
+  if(preceding %in% combined_bigram_counts$feature) {
+    prediction <- combined_bigram_counts$following[combined_bigram_counts$feature == preceding]
+    
+    
+    # table <- dplyr::filter(combined_bigram_counts, feature == preceding)
+    # prediction <- table$following[table$bigram_prob == max(table$bigram_prob)]
+    ## if more than one word predicted, choose first one at random
+    prediction <- prediction[1]
+    return(prediction)
+  }
+  ## else return something sensible
+  else return(most_common_word)
+
+  
+  
+  ## else return something sensible
+  # else return("something sensible :-)")
+  # else {
+  #   prediction <- combined_unigram_counts$feature[combined_unigram_counts$frequency == max(combined_unigram_counts$frequency)]
+  #   ## if more than one word predicted, choose first one at random
+  #   prediction <- prediction[1]
+  #   return(prediction)
+  # }
+  
+  ## check to see if preceding word is present in bigrams
+  # if(!preceding %in% combined_bigram_counts$feature) return("huh???")
+  # 
+  # ## filter bigram counts table
+  # table <- dplyr::filter(combined_bigram_counts, feature == preceding)
+  # ## get following word(s) with max probability
+  # prediction <- table$following[table$bigram_prob == max(table$bigram_prob)]
+  
+  
+  
+}
+
+
+
+
+
+```
+
+
